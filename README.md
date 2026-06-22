@@ -1,4 +1,4 @@
-# Arachnid
+![Arachnid repository analysis engine](/assets/arachnid_banner.png)
 
 Arachnid is a unified Python package for repository dependency graphing, standards auditing, and documentation snapshotting.
 
