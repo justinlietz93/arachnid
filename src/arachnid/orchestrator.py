@@ -6,6 +6,8 @@ matching the layout of the original bash wrapper:
 
     repo_graph.json            graph, machine-readable
     repo_graph_report.txt      graph, human-readable
+    repo_graph.html            graph, self-contained interactive viewer
+    repo_graph.mmd             graph, raw Mermaid flowchart
     repo_audit/                audit JSON + text report
     <repo>_docs.txt            docs snapshot
     summary.txt                run summary
@@ -26,7 +28,7 @@ from typing import Any, Dict, Optional, Sequence
 
 from . import audit as audit_pkg
 from .audit import render_audit_text, run_audit, should_fail, write_audit_report
-from .graph import GraphRun, render_report, run_graph, to_json
+from .graph import GraphRun, render_report, run_graph, to_html, to_json, to_mermaid
 from .snapshot import SnapshotResult, build_snapshot, write_snapshot
 
 
@@ -133,8 +135,23 @@ def run_scan(
                 ),
                 encoding="utf-8",
             )
+            graph_html = out_dir / "repo_graph.html"
+            graph_html.write_text(
+                to_html(
+                    graph_run.G,
+                    graph_run.summary,
+                    files_scanned=graph_run.files_scanned,
+                ),
+                encoding="utf-8",
+            )
+            graph_mermaid = out_dir / "repo_graph.mmd"
+            graph_mermaid.write_text(
+                to_mermaid(graph_run.G, fenced=False), encoding="utf-8"
+            )
             artifacts["graph_json"] = graph_json
             artifacts["graph_report"] = graph_report
+            artifacts["graph_html"] = graph_html
+            artifacts["graph_mermaid"] = graph_mermaid
             if not quiet:
                 print(f"arachnid: graph  {graph_json}", file=log)
             if fail_on_cycles and not graph_run.summary.get("is_dag", True):

@@ -139,6 +139,44 @@ def test_router_non_code_extensions_can_be_overridden(fixture_repo: Path) -> Non
     assert report["router_report"] is not None
 
 
+@pytest.mark.parametrize("directory", ["template", "templates", "TEMPLATES"])
+def test_oversize_template_files_are_informational(
+    fixture_repo: Path, directory: str
+) -> None:
+    item = f"src/mypkg/{directory}/viewer.html"
+    write(fixture_repo / item, "\n".join("<div></div>" for _ in range(401)))
+    cfg, _ = prepare_config(fixture_repo)
+
+    report = classify_file(fixture_repo, item, cfg)
+
+    assert report["issues"] == [
+        {
+            "severity": "info",
+            "rule": "template_file_over_loc",
+            "original_rule": "file_over_limit",
+            "path": item,
+            "actual": 401,
+            "limit": 400,
+            "message": (
+                f"{item} is a template file with 401 LOC, above the normal "
+                "400 LOC threshold. Its size is advisory."
+            ),
+        }
+    ]
+
+
+def test_template_directories_can_be_overridden(fixture_repo: Path) -> None:
+    item = "src/mypkg/render_assets/viewer.html"
+    write(fixture_repo / item, "\n".join("<div></div>" for _ in range(401)))
+    cfg, _ = prepare_config(fixture_repo)
+    cfg["loc_limits"]["template_directories"] = ["render_assets"]
+
+    report = classify_file(fixture_repo, item, cfg)
+
+    assert report["issues"][0]["severity"] == "info"
+    assert report["issues"][0]["rule"] == "template_file_over_loc"
+
+
 def test_snapshot_docs_and_repository_documents(fixture_repo: Path) -> None:
     write(fixture_repo / "README.md", "# Repository overview\n")
     write(fixture_repo / "AGENTS.md", "# Repository instructions\n")
@@ -174,6 +212,10 @@ def test_cli_scan_and_fail_on_warning(fixture_repo: Path) -> None:
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
     assert Path(payload["artifacts"]["graph_json"]).exists()
+    graph_html = Path(payload["artifacts"]["graph_html"])
+    graph_mermaid = Path(payload["artifacts"]["graph_mermaid"])
+    assert graph_html.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+    assert graph_mermaid.read_text(encoding="utf-8").startswith("flowchart LR")
     warn = subprocess.run(
         [sys.executable, "-m", "arachnid.cli", "audit", str(fixture_repo), "--scan-loops", "--fail-on-warning", "-q"],
         capture_output=True,

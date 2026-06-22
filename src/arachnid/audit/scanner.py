@@ -102,6 +102,43 @@ def issue(
     }
 
 
+def is_template_file(item: str, cfg: dict[str, Any]) -> bool:
+    """Return whether ``item`` is nested below a configured template directory."""
+    loc_limits = cfg.get("loc_limits", {})
+    configured = (
+        loc_limits.get("template_directories", ["template", "templates"])
+        if isinstance(loc_limits, dict)
+        else ["template", "templates"]
+    )
+    template_directories = {
+        str(directory).strip().strip("/\\").lower()
+        for directory in configured
+        if str(directory).strip().strip("/\\")
+    }
+    return any(
+        directory.lower() in template_directories
+        for directory in Path(item).parent.parts
+    )
+
+
+def make_template_loc_advisory(problem: dict[str, Any], item: str, loc: int) -> None:
+    """Convert a normal LOC gate into a visible, non-failing template advisory."""
+    original_rule = problem["rule"]
+    limit = problem.get("limit")
+    problem["severity"] = "info"
+    problem["rule"] = "template_file_over_loc"
+    problem["original_rule"] = original_rule
+    if limit is None:
+        problem["message"] = (
+            f"{item} is a template file with {loc} LOC. Its size is advisory."
+        )
+    else:
+        problem["message"] = (
+            f"{item} is a template file with {loc} LOC, above the normal "
+            f"{limit} LOC threshold. Its size is advisory."
+        )
+
+
 def classify_file(root: Path, item: str, cfg: dict[str, Any]) -> dict[str, Any]:
     path = root / item
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -116,6 +153,7 @@ def classify_file(root: Path, item: str, cfg: dict[str, Any]) -> dict[str, Any]:
         and matches(item, cfg["routers"]["patterns"])
     )
     is_schema = matches(item, cfg["schema_models"]["patterns"])
+    is_template = is_template_file(item, cfg)
     justified = has_size_justification(lines, cfg)
     problems: list[dict[str, Any]] = []
 
@@ -183,6 +221,14 @@ def classify_file(root: Path, item: str, cfg: dict[str, Any]) -> dict[str, Any]:
                 f"{item} has {loc} LOC. Warning is {warn_limit}.",
             )
         )
+
+    # Templates can be intentionally large to carry a generated document or
+    # viewer. Keep their LOC excess visible without treating it as an
+    # architecture violation. At this point ``problems`` contains only the
+    # size finding; router-specific checks below are not suppressed.
+    if is_template:
+        for problem in problems:
+            make_template_loc_advisory(problem, item, loc)
 
     router_report = None
     if is_router:

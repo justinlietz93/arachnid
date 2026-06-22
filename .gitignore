@@ -7,3 +7,4 @@ archive.zip
 ARACHNID_TOOL_ENHANCEMENTS.md
 .venv/
 venv/
+.arachnid_scans/

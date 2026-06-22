@@ -30,6 +30,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # ceilings so a long but legitimate README or lockfile is not a violation.
     "loc_limits": {
         "default": {"warning": 250, "hard": 400},
+        # Template assets can legitimately be large. Oversize files beneath
+        # these directory names remain visible as info findings, never gates.
+        "template_directories": ["template", "templates"],
         "overrides": {
             ".md": {"warning": 1000, "hard": 2000},
             ".rst": {"warning": 1000, "hard": 2000},

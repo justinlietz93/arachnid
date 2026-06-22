@@ -19,6 +19,19 @@ arachnid rm <label>
 
 ## Install
 
+To install this local checkout as a command available from any directory:
+
+```bash
+pipx install --editable .
+arachnid --help
+```
+
+`pipx` creates an isolated environment for the package and exposes its
+`arachnid` entry point through `~/.local/bin` (which must be on `PATH`). The
+editable install keeps the command pointed at this checkout while developing.
+
+For development-only use inside the repository virtualenv:
+
 ```bash
 python -m pip install -e .
 ```
@@ -74,11 +87,16 @@ Artifacts:
 ```text
 repo_graph.json
 repo_graph_report.txt
+repo_graph.html
+repo_graph.mmd
 repo_audit/
 <repo>_docs.txt
 summary.txt
 MANIFEST.txt
 ```
+
+The HTML artifact is self-contained and can be opened directly in a browser.
+The Mermaid artifact is raw flowchart source suitable for Mermaid tooling.
 
 Example:
 
@@ -142,6 +160,9 @@ Enhancements:
 - Optional hot-loop redundancy scanner.
 - Optional attribute ownership mismatch scanner.
 - Optional `--extra-scanner <script.py>` plugin hook.
+- Oversize files beneath `template/` or `templates/` are reported as info,
+  rather than LOC failures. Override the directory names with
+  `loc_limits.template_directories`.
 
 ### `arachnid snap`
 
@@ -182,6 +203,7 @@ Arachnid uses `.repo-standards.json` when present. Defaults include:
 {
   "loc_limits": {
     "default": { "warning": 250, "hard": 400 },
+    "template_directories": ["template", "templates"],
     "overrides": {
       ".md": { "warning": 1000, "hard": 2000 },
       ".json": { "warning": 300, "hard": 500 },
