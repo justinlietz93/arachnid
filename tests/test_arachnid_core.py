@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -8,6 +9,9 @@ from pathlib import Path
 import pytest
 
 from arachnid.audit import prepare_config, run_audit
+from arachnid.audit.defaults import DEFAULT_CONFIG
+from arachnid.audit.scanner import classify_file
+from arachnid.cli import build_parser
 from arachnid.graph import run_graph, to_html, to_json, to_mermaid
 from arachnid.snapshot import build_snapshot
 
@@ -107,6 +111,34 @@ def test_audit_enhancements(fixture_repo: Path) -> None:
     assert report["summary"]["info_issue_count"] >= 3
 
 
+@pytest.mark.parametrize(
+    "extension", sorted(DEFAULT_CONFIG["routers"]["non_code_extensions"])
+)
+def test_non_code_router_names_are_not_classified_as_routers(
+    fixture_repo: Path, extension: str
+) -> None:
+    item = f"docs/router{extension}"
+    write(fixture_repo / item, "# Router documentation\n")
+    cfg, _ = prepare_config(fixture_repo)
+
+    report = classify_file(fixture_repo, item, cfg)
+
+    assert report["is_router_file"] is False
+    assert report["router_report"] is None
+
+
+def test_router_non_code_extensions_can_be_overridden(fixture_repo: Path) -> None:
+    item = "docs/router.md"
+    write(fixture_repo / item, "# Router documentation\n")
+    cfg, _ = prepare_config(fixture_repo)
+    cfg["routers"]["non_code_extensions"] = []
+
+    report = classify_file(fixture_repo, item, cfg)
+
+    assert report["is_router_file"] is True
+    assert report["router_report"] is not None
+
+
 def test_snapshot_docs_and_repository_documents(fixture_repo: Path) -> None:
     write(fixture_repo / "README.md", "# Repository overview\n")
     write(fixture_repo / "AGENTS.md", "# Repository instructions\n")
@@ -149,3 +181,77 @@ def test_cli_scan_and_fail_on_warning(fixture_repo: Path) -> None:
         env=env,
     )
     assert warn.returncode == 1
+
+
+@pytest.mark.parametrize("command", ["scan", "audit"])
+def test_cli_help_lists_all_audit_scanner_flags(command: str) -> None:
+    env = {"PYTHONPATH": str(Path(__file__).parents[1] / "src")}
+    proc = subprocess.run(
+        [sys.executable, "-m", "arachnid.cli", command, "--help"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    for flag in (
+        "--config",
+        "--print-issues",
+        "--fail-on-warning",
+        "--no-coverage",
+        "--scan-events",
+        "--scan-loops",
+        "--scan-attrs",
+        "--extra-scanner",
+        "--scan-all",
+    ):
+        assert flag in proc.stdout
+
+
+def test_root_cli_help_lists_every_subcommand_flag() -> None:
+    env = {"PYTHONPATH": str(Path(__file__).parents[1] / "src")}
+    proc = subprocess.run(
+        [sys.executable, "-m", "arachnid.cli", "--help"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    subparsers = next(
+        action
+        for action in build_parser()._actions
+        if isinstance(action, argparse._SubParsersAction)
+    )
+    for command_parser in subparsers.choices.values():
+        for action in command_parser._actions:
+            for flag in action.option_strings:
+                assert flag in proc.stdout
+
+
+def test_cli_audit_scan_all_runs_every_builtin_scanner(fixture_repo: Path) -> None:
+    env = {"PYTHONPATH": str(Path(__file__).parents[1] / "src")}
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "arachnid.cli",
+            "audit",
+            str(fixture_repo),
+            "--scan-all",
+            "--format",
+            "json",
+            "-q",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    rules = {issue["rule"] for issue in json.loads(proc.stdout)["extra_issues"]}
+    assert {
+        "event_produced_never_consumed",
+        "redundant_call_in_loop",
+        "attr_ownership_mismatch",
+    } <= rules

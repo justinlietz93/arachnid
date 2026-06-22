@@ -47,6 +47,23 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "routers": {
         "enabled": True,
+        # Text, documentation, and configuration files can contain router-like
+        # names (for example, ``router.md``), but are never implementation routers.
+        "non_code_extensions": [
+            ".md",
+            ".rst",
+            ".txt",
+            ".json",
+            ".yml",
+            ".yaml",
+            ".toml",
+            ".cfg",
+            ".ini",
+            ".csv",
+            ".xml",
+            ".html",
+            ".css",
+        ],
         "patterns": [
             "controller",
             "orchestrator",

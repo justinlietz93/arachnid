@@ -96,12 +96,14 @@ def _add_audit_opts(parser: argparse.ArgumentParser) -> None:
                         help="run the attribute-ownership scanner (2.8)")
     parser.add_argument("--extra-scanner", default=None, metavar="FILE",
                         help="path to a user AST scanner defining visit() (2.10)")
-
+    parser.add_argument("--scan-all", action="store_true",
+                        help="run all AST scanners (events, loops, attrs)")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="arachnid",
         description="Repository graphing, auditing, and docs snapshotting.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"arachnid {__version__}")
     sub = parser.add_subparsers(dest="command")
@@ -173,6 +175,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_rm = sub.add_parser("rm", aliases=["remove"], help="remove a shortcut")
     p_rm.add_argument("label", help="shortcut name to remove")
+
+    # ``argparse`` normally shows only command names for ``arachnid --help``.
+    # Keep the command-specific help intact, but include it here as well so the
+    # root help is a complete inventory of the flags users can pass.
+    parser.epilog = "Detailed command options:\n\n" + "\n\n".join(
+        command_parser.format_help().strip()
+        for command_parser in (p_scan, p_graph, p_audit, p_snap, p_add, p_rm)
+    )
 
     return parser
 
@@ -247,9 +257,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         fail_on_cycles=args.fail_on_cycles,
         config_path=args.config,
         coverage=not args.no_coverage,
-        events=args.scan_events,
-        loops=args.scan_loops,
-        attrs=args.scan_attrs,
+        events=args.scan_events or args.scan_all,
+        loops=args.scan_loops or args.scan_all,
+        attrs=args.scan_attrs or args.scan_all,
         extra_scanner=Path(args.extra_scanner) if args.extra_scanner else None,
         fail_on_warning=args.fail_on_warning,
         docs_subdir=args.docs,
@@ -375,9 +385,9 @@ def _cmd_audit(args: argparse.Namespace) -> int:
         config_path=resolved_cfg,
         shortcut=shortcut,
         coverage=not args.no_coverage,
-        events=args.scan_events,
-        loops=args.scan_loops,
-        attrs=args.scan_attrs,
+        events=args.scan_events or args.scan_all,
+        loops=args.scan_loops or args.scan_all,
+        attrs=args.scan_attrs or args.scan_all,
         extra_scanner=Path(args.extra_scanner) if args.extra_scanner else None,
     )
 

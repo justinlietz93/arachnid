@@ -106,7 +106,15 @@ def classify_file(root: Path, item: str, cfg: dict[str, Any]) -> dict[str, Any]:
     path = root / item
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     loc = len(lines)
-    is_router = bool(cfg["routers"]["enabled"]) and matches(item, cfg["routers"]["patterns"])
+    non_code_extensions = {
+        str(extension).lower()
+        for extension in cfg["routers"].get("non_code_extensions", [])
+    }
+    is_router = (
+        bool(cfg["routers"]["enabled"])
+        and path.suffix.lower() not in non_code_extensions
+        and matches(item, cfg["routers"]["patterns"])
+    )
     is_schema = matches(item, cfg["schema_models"]["patterns"])
     justified = has_size_justification(lines, cfg)
     problems: list[dict[str, Any]] = []
