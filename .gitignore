@@ -5,3 +5,5 @@ build/
 .pytest_cache/
 archive.zip
 ARACHNID_TOOL_ENHANCEMENTS.md
+.venv/
+venv/
