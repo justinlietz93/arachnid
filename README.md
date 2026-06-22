@@ -130,6 +130,10 @@ Enhancements:
 - Internal unresolved imports under `--package-root` are marked internal and excluded from the headline unresolved count.
 - Orphans are labeled as `[standalone_script]` when a `__main__` guard appears in the first 20 lines, otherwise `[unused_module]`.
 - Output directories such as `.arachnid_scans/` are always skipped.
+- The HTML viewer uses a deterministic top-down architectural layout:
+  dependency depth forms rows, folder branches remain grouped, and a minimal
+  dependency backbone is shown by default. Use `all links` to reveal the
+  complete graph or select a module to reveal all of its direct links.
 
 ### `arachnid audit`
 

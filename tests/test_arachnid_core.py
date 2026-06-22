@@ -94,7 +94,11 @@ def test_graph_package_root_orphans_and_exports(fixture_repo: Path) -> None:
     assert payload["schema"] == "arachnid-graph/1"
     assert "src/mypkg/core.py" in {n["id"] for n in payload["graph"]["nodes"]}
     assert to_mermaid(run.G, fenced=False).startswith("flowchart LR")
-    assert "window.REPO_GRAPH_DATA" in to_html(run.G, run.summary, files_scanned=run.files_scanned)
+    html = to_html(run.G, run.summary, files_scanned=run.files_scanned)
+    assert "window.REPO_GRAPH_DATA" in html
+    assert "architecturePositions" in html
+    assert 'id="chkLinks"' in html
+    assert "Math.random" not in html
 
 
 def test_audit_enhancements(fixture_repo: Path) -> None:

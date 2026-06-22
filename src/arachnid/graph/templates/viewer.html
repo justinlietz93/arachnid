@@ -73,8 +73,10 @@ details.unres div{font-family:var(--mono);font-size:11px;margin-top:6px;word-bre
 path.edge{fill:none;stroke:var(--edge);stroke-width:1.4;opacity:.85}
 path.edge.cyc{stroke:var(--cyc)}
 path.edge.ext{stroke-dasharray:5 4;stroke:var(--ext);opacity:.6}
+path.edge.backbone{stroke:#77869b;stroke-width:1.7;opacity:.9}
 path.edge.hl{stroke:var(--accent);opacity:1}
 path.edge.dim{opacity:.07}
+path.edge.hidden{display:none}
 rect.hull{fill:var(--hull);fill-opacity:.42;stroke:#4a5364;stroke-dasharray:6 4;rx:12}
 text.hullLabel{fill:var(--muted);font:11px var(--mono);cursor:pointer}
 text.hullLabel:hover{fill:var(--accent)}
@@ -87,10 +89,11 @@ text.hullLabel:hover{fill:var(--accent)}
       <button id="btnFit" title="Fit graph to view">Fit</button>
       <button id="btnExpand" title="Expand every directory">Expand all</button>
       <button id="btnCollapse" title="Collapse to top level">Collapse all</button>
-      <label><input type="checkbox" id="chkExt" checked> externals</label>
+      <label><input type="checkbox" id="chkLinks"> all links</label>
+      <label><input type="checkbox" id="chkExt"> externals</label>
       <input id="search" type="search" placeholder="search files...">
     </div>
-    <div id="hint">click folder: expand &middot; click hull label: collapse &middot; click file: inspect &middot; drag: move &middot; wheel: zoom</div>
+    <div id="hint">primary links shown &middot; click folder: expand &middot; click file: inspect all direct links &middot; drag: move &middot; wheel: zoom</div>
     <svg id="canvas">
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -301,9 +304,110 @@ function layerDepths(nodeIds, edges){
   return { depths: out, comp };
 }
 
+/* A deterministic Sugiyama-style arrangement. Dependency depth determines
+   rows, while the folder tree supplies stable blocks within each row.
+   Barycentric sweeps order those blocks around their neighbours, substantially
+   reducing crossings without scattering one architectural directory apart. */
+function architectureGroup(v, fileDir){
+  if (v.kind === 'external') return '\uffff' + v.id;
+  if (v.group) return v.group;
+  if (v.dir) return v.id;
+  return fileDir.get(v.id) || '';
+}
+
+function architecturePositions(nodes, edges, fileDir){
+  const byId = new Map(nodes.map(v => [v.id, v]));
+  const layers = new Map();
+  for (const v of nodes){
+    if (!layers.has(v.depth)) layers.set(v.depth, []);
+    layers.get(v.depth).push(v);
+  }
+  const depths = [...layers.keys()].sort((a, b) => a - b);
+  const stableKey = v => architectureGroup(v, fileDir) + '\u0000' + v.id;
+  for (const d of depths) layers.get(d).sort((a, b) => stableKey(a).localeCompare(stableKey(b)));
+
+  function ranks(){
+    const out = new Map();
+    for (const d of depths){ layers.get(d).forEach((v, i) => out.set(v.id, i)); }
+    return out;
+  }
+  function neighbourScore(v, depth, rank, towardSources){
+    const values = [];
+    for (const e of edges){
+      const otherId = towardSources && e.target === v.id ? e.source :
+        (!towardSources && e.source === v.id ? e.target : null);
+      if (otherId === null) continue;
+      const other = byId.get(otherId);
+      if (!other || (towardSources ? other.depth >= depth : other.depth <= depth)) continue;
+      values.push(rank.get(otherId));
+    }
+    if (!values.length) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+  function reorder(depth, towardSources){
+    const rank = ranks();
+    const source = layers.get(depth);
+    const blocks = new Map();
+    source.forEach((v, index) => {
+      const key = architectureGroup(v, fileDir);
+      if (!blocks.has(key)) blocks.set(key, { key, nodes: [], index, score: null });
+      const block = blocks.get(key);
+      block.nodes.push({ v, index, score: neighbourScore(v, depth, rank, towardSources) });
+    });
+    const compare = (a, b) => {
+      if (a.score === null && b.score === null) return a.index - b.index;
+      if (a.score === null) return 1;
+      if (b.score === null) return -1;
+      return a.score - b.score || a.index - b.index;
+    };
+    const ordered = [...blocks.values()];
+    for (const block of ordered){
+      const scores = block.nodes.filter(node => node.score !== null).map(node => node.score);
+      block.score = scores.length
+        ? scores.reduce((sum, score) => sum + score, 0) / scores.length
+        : null;
+      block.nodes.sort(compare);
+    }
+    ordered.sort(compare);
+    layers.set(depth, ordered.flatMap(block => block.nodes.map(node => node.v)));
+  }
+  for (let pass = 0; pass < 6; pass++){
+    for (const d of depths) reorder(d, true);
+    for (const d of [...depths].reverse()) reorder(d, false);
+  }
+
+  const rowHeights = new Map();
+  for (const d of depths){
+    rowHeights.set(d, Math.max(...layers.get(d).map(v => v.h), 0));
+  }
+  const result = new Map();
+  let previousHeight = 0;
+  let y = 70;
+  for (const d of depths){
+    const row = layers.get(d);
+    const height = rowHeights.get(d);
+    y += previousHeight ? previousHeight / 2 + 104 + height / 2 : height / 2;
+    const groupGap = (a, b) => architectureGroup(a, fileDir) === architectureGroup(b, fileDir) ? 24 : 52;
+    let total = 0;
+    row.forEach((v, i) => {
+      total += v.w;
+      if (i + 1 < row.length) total += groupGap(v, row[i + 1]);
+    });
+    let x = -total / 2;
+    row.forEach((v, i) => {
+      x += v.w / 2;
+      result.set(v.id, { x, y });
+      x += v.w / 2;
+      if (i + 1 < row.length) x += groupGap(v, row[i + 1]);
+    });
+    previousHeight = height;
+  }
+  return result;
+}
+
 if (typeof window !== 'undefined'){
   window.RG = { buildTree, compressTree, dirChain, makeRepOf, aggregateEdges,
-                sccCondense, layerDepths };
+                sccCondense, layerDepths, architectureGroup, architecturePositions };
 }
 
 /* ============================ viewer ====================================== */
@@ -333,16 +437,17 @@ if (typeof document !== 'undefined' && document.getElementById('canvas')){
     }
   })();
 
-  let externalsVisible = true;
+  let externalsVisible = false;
+  let showAllLinks = false;
   let selected = null;
   let query = '';
 
   /* persisted positions across renders */
-  const pos = new Map();   /* id -> {x,y,vx,vy,fx,fy} */
+  const pos = new Map();   /* id -> {x,y,fx,fy} */
   let visNodes = [];       /* render list */
   let visEdges = [];
   let hullDirs = [];
-  let alpha = 0;
+  let backboneEdges = new Set();
 
   /* ---- measuring ---- */
   const meas = document.createElement('canvas').getContext('2d');
@@ -444,46 +549,7 @@ if (typeof document !== 'undefined' && document.getElementById('canvas')){
     const { depths } = layerDepths(visNodes.map(v => v.id), visEdges);
     let maxD = 0;
     for (const v of visNodes){ v.depth = depths.get(v.id) || 0; maxD = Math.max(maxD, v.depth); }
-    for (const v of visNodes){ if (v.kind === 'external') v.depth = Math.max(v.depth, maxD); }
-
-    /* seed / keep positions */
-    const byDepth = new Map();
-    for (const v of visNodes){
-      if (!byDepth.has(v.depth)) byDepth.set(v.depth, []);
-      byDepth.get(v.depth).push(v);
-    }
-    for (const [d, arr] of byDepth){
-      arr.forEach((v, i) => {
-        let p = pos.get(v.id);
-        if (!p){
-          /* children appear near their (former) group, groups at child centroid */
-          let sx = 100 + d * 280, sy = 90 + i * 58;
-          if (isDir(v.id)){
-            const kids = descendFiles(v.id).filter(f => pos.has(f));
-            if (kids.length){
-              sx = kids.reduce((a, f) => a + pos.get(f).x, 0) / kids.length;
-              sy = kids.reduce((a, f) => a + pos.get(f).y, 0) / kids.length;
-            }
-          } else {
-            const dir = fileDir.get(v.id);
-            if (dir !== undefined){
-              const chain = dirChain(dirs, dir);
-              for (let i2 = chain.length - 1; i2 >= 0; i2--){
-                if (pos.has(chain[i2])){
-                  const gp = pos.get(chain[i2]);
-                  sx = gp.x + (Math.random() - .5) * 120;
-                  sy = gp.y + (Math.random() - .5) * 120;
-                  break;
-                }
-              }
-            }
-          }
-          p = { x: sx, y: sy, vx: 0, vy: 0 };
-          pos.set(v.id, p);
-        }
-        v.p = p;
-      });
-    }
+    for (const v of visNodes){ if (v.kind === 'external') v.depth = maxD + 1; }
 
     /* hull directories: expanded, fully-visible chain, has visible content */
     hullDirs = [];
@@ -513,8 +579,35 @@ if (typeof document !== 'undefined' && document.getElementById('canvas')){
         }
       }
     }
+    /* A hull represents one immediate architectural group, never every
+       ancestor. Nested all-descendant hulls obscure the hierarchy instead of
+       clarifying it once a project has several expanded levels. */
+    hullDirs = hullDirs.filter(id => visNodes.some(v => v.group === id));
+    const arranged = architecturePositions(visNodes, visEdges, fileDir);
+    for (const v of visNodes){
+      const target = arranged.get(v.id);
+      const p = pos.get(v.id) || {};
+      p.x = target.x;
+      p.y = target.y;
+      delete p.fx; delete p.fy;
+      pos.set(v.id, p);
+      v.p = p;
+    }
+    const byId = new Map(visNodes.map(v => [v.id, v]));
+    const bestIncoming = new Map();
+    for (const edge of visEdges){
+      const source = byId.get(edge.source);
+      const target = byId.get(edge.target);
+      if (!source || !target || source.depth >= target.depth) continue;
+      const score = (target.depth - source.depth) * 10000 + Math.abs(source.p.x - target.p.x);
+      const previous = bestIncoming.get(target.id);
+      if (!previous || score < previous.score){ bestIncoming.set(target.id, { edge, score }); }
+    }
+    backboneEdges = new Set(
+      [...bestIncoming.values()].map(entry => entry.edge.source + '\u0000' + entry.edge.target)
+    );
     rebuildDom();
-    reheat(1.0);
+    draw();
     refreshSide();
   }
 
@@ -540,6 +633,7 @@ if (typeof document !== 'undefined' && document.getElementById('canvas')){
     for (const e of visEdges){
       const cls = 'edge' + (e.cyclic ? ' cyc' : '') + (e.external ? ' ext' : '');
       const p = el('path', { class: cls, 'marker-end': e.cyclic ? 'url(#arrowCyc)' : 'url(#arrow)' });
+      p.classList.toggle('backbone', backboneEdges.has(e.source + '\u0000' + e.target));
       const names = [...e.names].slice(0, 14);
       const extra = e.names.size > 14 ? ('  +' + (e.names.size - 14) + ' more') : '';
       const tt = el('title', {});
@@ -606,7 +700,7 @@ if (typeof document !== 'undefined' && document.getElementById('canvas')){
       if (Math.abs(ev.clientX - drag.sx) + Math.abs(ev.clientY - drag.sy) > 4) drag.moved = true;
       v.p.fx = drag.ox + dx; v.p.fy = drag.oy + dy;
       v.p.x = v.p.fx; v.p.y = v.p.fy;
-      reheat(0.25);
+      draw();
     });
     g.addEventListener('pointerup', ev => {
       if (!drag || drag.v !== v) return;
@@ -640,10 +734,12 @@ if (typeof document !== 'undefined' && document.getElementById('canvas')){
     }
     for (const { el: p, e } of edgeEls.values()){
       const on = selected && (e.source === selected || e.target === selected);
+      const visible = showAllLinks || backboneEdges.has(e.source + '\u0000' + e.target) || !!on;
       p.classList.toggle('hl', !!on);
+      p.classList.toggle('hidden', !visible);
       if (on) p.setAttribute('marker-end', 'url(#arrowHl)');
       else p.setAttribute('marker-end', e.cyclic ? 'url(#arrowCyc)' : 'url(#arrow)');
-      p.classList.toggle('dim', !!selected && !on);
+      p.classList.toggle('dim', visible && !!selected && !on);
     }
   }
 
@@ -659,163 +755,22 @@ if (typeof document !== 'undefined' && document.getElementById('canvas')){
       if (!selected) g.classList.toggle('dim', !!q && !hit);
     }
     if (!selected){
-      for (const { el: p } of edgeEls.values()) p.classList.toggle('dim', !!q);
+      for (const { el: p } of edgeEls.values()) p.classList.toggle('dim', showAllLinks && !!q);
     }
   }
-
-  /* ---- physics ----
-     Two cooperating systems:
-       1. force layout (charge + springs + depth columns), scaled by alpha,
-          gives the organic shape and cools to rest.
-       2. rectangular collision, a positional constraint run every frame at
-          full strength regardless of alpha, so boxes never overlap even
-          after the layout cools. Resolves along the axis of least
-          penetration; a dragged node is immovable and others yield. */
-  const PAD_X = 24, PAD_Y = 16;   /* minimum gap between boxes */
-  let settle = 0;
-  function reheat(a){
-    alpha = Math.max(alpha, a); settle = 0;
-    if (!ticking){ ticking = true; requestAnimationFrame(tick); }
-  }
-  let ticking = false;
-  function tick(){
-    if (alpha > 0.02){
-      step();
-      collide(3, 0.9);
-      alpha *= 0.97;
-      draw();
-      requestAnimationFrame(tick);
-    } else {
-      /* cooled: keep resolving collisions until nothing moves */
-      const moved = collide(8, 0.8);
-      draw();
-      if (moved > 0.4 && settle++ < 120) requestAnimationFrame(tick);
-      else ticking = false;
-    }
-  }
-
-  function step(){
-    const n = visNodes.length;
-    /* charge repulsion: spreads disconnected pieces, fades with alpha.
-       Hard separation is the collision pass, not this. */
-    for (let i = 0; i < n; i++){
-      const a = visNodes[i];
-      for (let j = i + 1; j < n; j++){
-        const b = visNodes[j];
-        let dx = a.p.x - b.p.x, dy = a.p.y - b.p.y;
-        let d2 = dx * dx + dy * dy;
-        if (d2 < 1){ dx = (Math.random() - .5); dy = (Math.random() - .5); d2 = 1; }
-        let f = Math.min(2200 / d2, 9) * alpha;
-        const d = Math.sqrt(d2);
-        const ux = dx / d, uy = dy / d;
-        a.p.vx += ux * f; a.p.vy += uy * f;
-        b.p.vx -= ux * f; b.p.vy -= uy * f;
-      }
-    }
-    /* springs */
-    const byId = new Map(visNodes.map(v => [v.id, v]));
-    for (const e of visEdges){
-      const a = byId.get(e.source), b = byId.get(e.target);
-      if (!a || !b) continue;
-      const dx = b.p.x - a.p.x, dy = b.p.y - a.p.y;
-      const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-      const rest = 150 + (a.w + b.w) / 4;
-      const f = 0.012 * (d - rest) * alpha;
-      const ux = dx / d, uy = dy / d;
-      a.p.vx += ux * f * d * 0.06; a.p.vy += uy * f * d * 0.06;
-      b.p.vx -= ux * f * d * 0.06; b.p.vy -= uy * f * d * 0.06;
-    }
-    /* depth columns + group cohesion + weak vertical centering */
-    const groupC = new Map();
-    for (const v of visNodes){
-      if (v.group){
-        let g = groupC.get(v.group);
-        if (!g){ g = { x: 0, y: 0, n: 0 }; groupC.set(v.group, g); }
-        g.x += v.p.x; g.y += v.p.y; g.n++;
-      }
-    }
-    for (const v of visNodes){
-      const tx = 100 + v.depth * 280;
-      v.p.vx += (tx - v.p.x) * 0.055 * alpha;
-      v.p.vy += (300 - v.p.y) * 0.004 * alpha;
-      if (v.group){
-        const g = groupC.get(v.group);
-        v.p.vy += (g.y / g.n - v.p.y) * 0.05 * alpha;
-      }
-    }
-    /* integrate */
-    for (const v of visNodes){
-      if (v.p.fx != null){ v.p.x = v.p.fx; v.p.y = v.p.fy; v.p.vx = 0; v.p.vy = 0; continue; }
-      v.p.vx *= 0.78; v.p.vy *= 0.78;
-      v.p.x += v.p.vx; v.p.y += v.p.vy;
-    }
-  }
-
-  /* Rectangular collision as a positional constraint. Returns the largest
-     single move applied, so the caller knows when the layout is at rest. */
-  function collide(iters, relax){
-    const n = visNodes.length;
-    let maxMove = 0;
-    for (let it = 0; it < iters; it++){
-      for (let i = 0; i < n; i++){
-        const a = visNodes[i];
-        const aFixed = a.p.fx != null;
-        for (let j = i + 1; j < n; j++){
-          const b = visNodes[j];
-          let dx = b.p.x - a.p.x, dy = b.p.y - a.p.y;
-          const minX = (a.w + b.w) / 2 + PAD_X;
-          const minY = (a.h + b.h) / 2 + PAD_Y;
-          const ox = minX - Math.abs(dx);
-          const oy = minY - Math.abs(dy);
-          if (ox <= 0 || oy <= 0) continue;       /* not overlapping */
-          const bFixed = b.p.fx != null;
-          if (aFixed && bFixed) continue;
-          if (Math.abs(dx) < 1 && Math.abs(dy) < 1){
-            /* coincident: fan apart on an index-derived direction so a
-               whole pile spreads radially instead of into two stacks */
-            const ang = i * 2.3999632;            /* golden angle */
-            const nx = Math.cos(ang), ny = Math.sin(ang);
-            if (!aFixed){ a.p.x -= nx * 5; a.p.y -= ny * 5; }
-            if (!bFixed){ b.p.x += nx * 5; b.p.y += ny * 5; }
-            if (5 > maxMove) maxMove = 5;
-            continue;
-          }
-          if (ox < oy){
-            /* separate horizontally (axis of least penetration) */
-            let dir = dx > 0 ? 1 : (dx < 0 ? -1 : ((i + j) % 2 ? 1 : -1));
-            const m = ox * relax;
-            if (aFixed){ b.p.x += m * dir; }
-            else if (bFixed){ a.p.x -= m * dir; }
-            else { a.p.x -= m / 2 * dir; b.p.x += m / 2 * dir; }
-            if (m > maxMove) maxMove = m;
-          } else {
-            /* separate vertically */
-            let dir = dy > 0 ? 1 : (dy < 0 ? -1 : ((i + j) % 2 ? 1 : -1));
-            const m = oy * relax;
-            if (aFixed){ b.p.y += m * dir; }
-            else if (bFixed){ a.p.y -= m * dir; }
-            else { a.p.y -= m / 2 * dir; b.p.y += m / 2 * dir; }
-            if (m > maxMove) maxMove = m;
-          }
-        }
-      }
-    }
-    return maxMove;
-  }
-
 
   function edgePath(a, b){
-    const x1 = a.p.x + a.w / 2, y1 = a.p.y;
-    const x2 = b.p.x - b.w / 2 - 4, y2 = b.p.y;
-    const mx = (x1 + x2) / 2;
-    if (x2 > x1 + 18){
-      return 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2;
+    const x1 = a.p.x, y1 = a.p.y + a.h / 2;
+    const x2 = b.p.x, y2 = b.p.y - b.h / 2 - 4;
+    const my = (y1 + y2) / 2;
+    if (y2 > y1 + 18){
+      return 'M' + x1 + ',' + y1 + ' C' + x1 + ',' + my + ' ' + x2 + ',' + my + ' ' + x2 + ',' + y2;
     }
-    /* backward edge: arc around */
-    const x1b = a.p.x, y1b = a.p.y + a.h / 2;
-    const x2b = b.p.x, y2b = b.p.y - b.h / 2 - 4;
-    const bend = 70 + Math.abs(y2b - y1b) * 0.15;
-    return 'M' + x1b + ',' + y1b + ' C' + x1b + ',' + (y1b + bend) + ' ' + x2b + ',' + (y2b - bend) + ' ' + x2b + ',' + y2b;
+    /* Cycles and backward links leave through the right-hand routing lane. */
+    const x1b = a.p.x + a.w / 2, y1b = a.p.y;
+    const x2b = b.p.x - b.w / 2 - 4, y2b = b.p.y;
+    const bend = 70 + Math.abs(x2b - x1b) * 0.15;
+    return 'M' + x1b + ',' + y1b + ' C' + (x1b + bend) + ',' + y1b + ' ' + (x2b + bend) + ',' + y2b + ' ' + x2b + ',' + y2b;
   }
 
   function draw(){
@@ -828,13 +783,7 @@ if (typeof document !== 'undefined' && document.getElementById('canvas')){
       if (a && b) p.setAttribute('d', edgePath(a, b));
     }
     for (const id of hullDirs){
-      const members = visNodes.filter(v => {
-        if (v.id === id) return false;
-        const dir = v.dir ? dirs.get(v.id).parent : fileDir.get(v.id);
-        if (dir === undefined || dir === null) return false;
-        const chain = dirChain(dirs, v.dir ? v.id : dir);
-        return chain.includes(id);
-      });
+      const members = visNodes.filter(v => v.group === id);
       const h = hullEls.get(id);
       if (!h) continue;
       if (!members.length){ h.r.setAttribute('width', 0); h.t.textContent = ''; continue; }
@@ -987,13 +936,17 @@ if (typeof document !== 'undefined' && document.getElementById('canvas')){
   document.getElementById('btnExpand').addEventListener('click', () => {
     for (const [id] of dirs) expanded.add(id);
     recompute();
-    setTimeout(fitView, 350);
+    fitView();
   });
   document.getElementById('btnCollapse').addEventListener('click', () => {
     expanded.clear(); expanded.add('');
     selected = null;
     recompute();
-    setTimeout(fitView, 350);
+    fitView();
+  });
+  document.getElementById('chkLinks').addEventListener('change', ev => {
+    showAllLinks = ev.target.checked;
+    applySelectionClasses();
   });
   document.getElementById('chkExt').addEventListener('change', ev => {
     externalsVisible = ev.target.checked;
