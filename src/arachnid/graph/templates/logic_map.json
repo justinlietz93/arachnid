@@ -1,0 +1,32 @@
+{
+  "summary": {
+    "project_root": "string",
+    "total_modules_indexed": "integer",
+    "timestamp": "ISO8601"
+  },
+  "modules": {
+    "path/to/module.py": {
+      "role_tags": ["list of strings (e.g., 'orchestrator', 'engine', 'api')"],
+      "fan_out_score": "integer",
+      "exported_members": {
+        "classes": [
+          {
+            "name": "string",
+            "methods": ["list of strings"],
+            "base_classes": ["list of strings"]
+          }
+        ],
+        "functions": [
+          {
+            "name": "string",
+            "signature": "string"
+          }
+        ]
+      },
+      "dependencies": ["list of internal paths (filtered to top 5)"]
+    }
+  },
+  "critical_paths": {
+    "flow_name": ["path/to/file.py", "path/to/file.py"]
+  }
+}

@@ -1,0 +1,23 @@
+flowchart {{ direction }}
+{% for g in groups %}
+    subgraph {{ g.id }}["{{ g.label }}"]
+{% for n in g.nodes %}
+        {{ n.id }}["{{ n.label }}"]
+{% endfor %}
+    end
+{% endfor %}
+{% for n in ungrouped %}
+    {{ n.id }}["{{ n.label }}"]
+{% endfor %}
+{% for e in edges %}
+    {{ e }}
+{% endfor %}
+{% for c in class_defs %}
+    {{ c }}
+{% endfor %}
+{% for c in class_assignments %}
+    {{ c }}
+{% endfor %}
+{% for l in link_styles %}
+    {{ l }}
+{% endfor %}

@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arachnid"
+dynamic = ["version"]
+description = "Repository dependency graphing, standards auditing, and docs snapshotting in one CLI."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Justin Lietz" }]
+keywords = [
+    "dependency-graph",
+    "static-analysis",
+    "code-audit",
+    "jedi",
+    "networkx",
+    "mermaid",
+    "cli",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Environment :: Console",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "jedi>=0.19.0",
+    "networkx>=3.0",
+    "jinja2>=3.1",
+]
+
+[project.scripts]
+arachnid = "arachnid.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[tool.setuptools.dynamic]
+version = { attr = "arachnid._version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"arachnid.graph" = ["templates/*.j2", "templates/*.html", "templates/*.json"]
