@@ -4,7 +4,8 @@
 
 Arachnid is a unified Python package for repository dependency graphing, standards auditing, and documentation snapshotting.
 
-It merges the original `repo-graph` dependency analyzer, the `repo-audit` standards scanner, and the bash helper workflow into one installable CLI:
+It bundles repository graphing, standards auditing, and documentation
+snapshotting into one installable CLI:
 
 ```bash
 arachnid scan [target] [options]
@@ -144,7 +145,11 @@ Enhancements:
 
 ### `arachnid snap`
 
-Creates a docs-only snapshot from `ROOT/docs` by default.
+Creates a docs-only snapshot from `ROOT/docs` by default, plus recognized
+repository docs such as `README.md`, `AGENTS.md`, `CONTRIBUTING.md`,
+`ARCHITECTURE.md`, `CHANGELOG.md`, `LICENSE`, and `SECURITY.md` wherever they
+occur outside generated or dependency directories, together with conventionally
+named project documents such as `NOTES.md`, `TODO.md`, and `VALIDATION.md`.
 
 ```bash
 arachnid snap .
@@ -152,11 +157,14 @@ arachnid snap . --docs docs/architecture --out architecture_docs.txt
 arachnid snap . --out -
 ```
 
-Only documentation/config extensions are included:
+All documentation/config files under the selected docs tree are included. Away
+from that tree, Arachnid includes only recognized documentation filenames:
 
 ```text
 .md .rst .txt .adoc .org .yml .yaml .json .toml .ini .cfg
 ```
+
+Source code and arbitrary repository files are not included.
 
 Binary or non-UTF8 files are represented as:
 

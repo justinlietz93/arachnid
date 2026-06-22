@@ -107,13 +107,28 @@ def test_audit_enhancements(fixture_repo: Path) -> None:
     assert report["summary"]["info_issue_count"] >= 3
 
 
-def test_snapshot_docs_only_and_binary_skip(fixture_repo: Path) -> None:
+def test_snapshot_docs_and_repository_documents(fixture_repo: Path) -> None:
+    write(fixture_repo / "README.md", "# Repository overview\n")
+    write(fixture_repo / "AGENTS.md", "# Repository instructions\n")
+    write(fixture_repo / "src/mypkg/README.rst", "Package notes\n=============\n")
     snap = build_snapshot(fixture_repo)
     assert snap.docs_exists is True
     assert "Repository Docs Snapshot - generated" in snap.text
     assert "--- FILE: docs/overview.md ---" in snap.text
+    assert "--- FILE: README.md ---" in snap.text
+    assert "--- FILE: AGENTS.md ---" in snap.text
+    assert "--- FILE: src/mypkg/README.rst ---" in snap.text
     assert "[Skipped: binary or non-UTF8]" in snap.text
     assert "pyproject.toml" not in snap.text
+    assert "src/mypkg/core.py" not in snap.text
+
+
+def test_snapshot_keeps_repository_documents_when_docs_dir_is_missing(tmp_path: Path) -> None:
+    write(tmp_path / "README.md", "# Repository overview\n")
+    write(tmp_path / "AGENTS.md", "# Repository instructions\n")
+    snap = build_snapshot(tmp_path)
+    assert snap.docs_exists is False
+    assert snap.included == ["AGENTS.md", "README.md"]
 
 
 def test_cli_scan_and_fail_on_warning(fixture_repo: Path) -> None:

@@ -196,7 +196,8 @@ def run_scan(
         artifacts["snapshot"] = snap_file
         if not snap_result.docs_exists and not quiet:
             print(
-                f"arachnid: no docs directory at {snap_result.docs_dir}; snapshot empty",
+                f"arachnid: no docs directory at {snap_result.docs_dir}; wrote "
+                f"{snap_result.file_count} discovered docs",
                 file=log,
             )
         elif not quiet:

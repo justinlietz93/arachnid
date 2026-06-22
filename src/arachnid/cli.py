@@ -412,8 +412,8 @@ def _cmd_snap(args: argparse.Namespace) -> int:
     out_target = args.out or f"{root.name}_docs.txt"
     out_path = write_snapshot(result, Path(out_target))
     if not result.docs_exists:
-        print(f"arachnid: no docs directory at {result.docs_dir}; wrote empty snapshot "
-              f"to {out_path}", file=sys.stderr)
+        print(f"arachnid: no docs directory at {result.docs_dir}; wrote "
+              f"{result.file_count} discovered docs to {out_path}", file=sys.stderr)
     else:
         print(f"arachnid: wrote {result.file_count} docs ({result.skipped_binary} "
               f"skipped) to {out_path}", file=sys.stderr)
