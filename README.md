@@ -1,5 +1,7 @@
 ![Arachnid repository analysis engine](/assets/arachnid_banner.png)
 
+# CLI for fast, lightweight analysis
+
 Arachnid is a unified Python package for repository dependency graphing, standards auditing, and documentation snapshotting.
 
 It merges the original `repo-graph` dependency analyzer, the `repo-audit` standards scanner, and the bash helper workflow into one installable CLI:
